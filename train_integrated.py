@@ -245,13 +245,10 @@ def get_latest_images():
 def serve_sample(filename):
     return send_from_directory(SAMPLES_DIR, filename)
 
-if __name__ == '__main__':
-    # Start the training in a background thread
-    print("Starting training thread...")
-    train_thread = threading.Thread(target=run_training, daemon=True)
-    train_thread.start()
-    
-    # Run the Flask app in the main thread
-    # On Kaggle, this will be accessible via a public URL.
-    print("Starting Flask server... access the UI through your notebook's public URL.")
-    app.run(host='0.0.0.0', port=5001) 
+# --- Start Background Training ---
+# This code runs once when the module is loaded. Gunicorn's --preload
+# flag ensures this happens in a single master process before workers are forked.
+print("Starting training thread...")
+train_thread = threading.Thread(target=run_training, daemon=True)
+train_thread.start()
+print("Flask server is ready to be served by Gunicorn.") 

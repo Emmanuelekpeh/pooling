@@ -4,4 +4,5 @@ numpy
 matplotlib
 scikit-image
 Flask
-Pillow 
+Pillow
+gunicorn 

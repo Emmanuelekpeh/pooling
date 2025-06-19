@@ -315,10 +315,6 @@ def get_status():
     except (IOError, json.JSONDecodeError):
         return jsonify({'status': 'Error reading status file.', 'images': [], 'error': True})
 
-@app.route('/samples/<path:path>')
-def send_sample(path):
-    # ... existing code ...
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Run the NCA-StyleGAN application.")
     parser.add_argument('--run-training', action='store_true', help='Run the training loop.')

@@ -34,9 +34,9 @@ IMG_SIZE = 64
 BATCH_SIZE = 4 # Reduced batch size to lower memory usage
 LR = 1e-4
 EPOCHS = 500 # Increased epochs for longer runs
-Z_DIM = 128
-W_DIM = 128
-NCA_CHANNELS = 16
+Z_DIM = 64 # Reduced model complexity
+W_DIM = 64 # Reduced model complexity
+NCA_CHANNELS = 12 # Reduced model complexity
 NCA_STEPS_MIN, NCA_STEPS_MAX = 48, 64
 SAMPLES_DIR = "samples/integrated"
 

@@ -34,15 +34,13 @@ def get_device():
     print("No GPU found, using CPU.")
     return torch.device("cpu")
 
-# --- FORCED CPU FOR STABILITY TEST ---
-print("--- WARNING: Forcing CPU for stability test. ---")
-DEVICE = torch.device("cpu")
+DEVICE = get_device()
 # --- End Device Configuration ---
 
 # --- Project Configuration ---
 DATA_DIR = "data/ukiyo-e"
 IMG_SIZE = 64
-BATCH_SIZE = 4 # Reduced batch size for CPU memory
+BATCH_SIZE = 16 # Back to a larger batch size for GPU
 LR = 1e-4
 EPOCHS = 500 # Increased epochs for longer runs
 Z_DIM = 128
@@ -182,10 +180,31 @@ def run_training():
                 loss_gen_nca.backward()
                 opt_gen_nca.step()
 
-                pbar.set_description(f"E:{epoch+1} | L_G/NCA:{loss_gen_nca:.3f} (G:{loss_gan:.3f}, N:{loss_nca:.3f})")
+                # --- Train Discriminator ---
+                opt_disc.zero_grad()
+                
+                # D.1. On real images
+                disc_real = disc(real).reshape(-1)
+                loss_disc_real = F.relu(1.0 - disc_real).mean()
+                
+                # D.2. On StyleGAN fakes
+                disc_fake_stylegan = disc(img_stylegan.detach()).reshape(-1)
+                loss_disc_fake_stylegan = F.relu(1.0 + disc_fake_stylegan).mean()
+                
+                # D.3. On NCA fakes
+                disc_fake_nca = disc(img_nca.detach()).reshape(-1)
+                loss_disc_fake_nca = F.relu(1.0 + disc_fake_nca).mean()
+                
+                # Combine discriminator losses
+                loss_disc = (loss_disc_real + loss_disc_fake_stylegan + loss_disc_fake_nca) / 3
+                loss_disc.backward()
+                opt_disc.step()
 
-                if i % 10 == 0: # Save images more frequently on CPU
+                pbar.set_description(f"E:{epoch+1} | L_D:{loss_disc:.3f} | L_G/NCA:{loss_gen_nca:.3f} (G:{loss_gan:.3f}, N:{loss_nca:.3f})")
+
+                if i % 50 == 0:
                     with torch.no_grad():
+                        # Generate a batch of images with fixed noise to see progress
                         sample_stylegan, w_sample = gen(fixed_noise, return_w=True)
                         seed_sample = nca.get_seed(batch_size=fixed_noise.shape[0], size=IMG_SIZE, device=DEVICE)
                         nca_grid_sample = nca(seed_sample, w_sample, steps=NCA_STEPS_MAX)
@@ -220,8 +239,6 @@ def get_latest_images():
     with latest_images_lock:
         response = latest_image_paths.copy()
     response['status'] = training_status
-    # Add a dummy loss to the status
-    response['status'] += " | No loss data for this simplified test."
     return jsonify(response)
 
 @app.route('/samples/<path:filename>')

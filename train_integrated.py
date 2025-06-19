@@ -9,6 +9,10 @@ from flask import Flask, render_template_string, jsonify, send_from_directory
 import threading
 import glob
 import time
+import io
+import base64
+import random
+import resource # Import the resource module
 
 from src.data_loader.loader import ImageDataset
 from src.models.integrated import IntegratedGenerator, IntegratedNCA
@@ -28,9 +32,48 @@ def get_device():
 DEVICE = get_device()
 # --- End Device Configuration ---
 
+# --- Memory Limit Configuration ---
+def set_memory_limit():
+    """
+    Reads the container's memory limit and sets it for the Python process.
+    This helps in getting a MemoryError instead of a sudden OOM kill.
+    """
+    # This path is specific to cgroup v1, which is common in many container envs.
+    # Fly.io uses cgroup v2, where the path is different. We'll check for both.
+    cgroup_v1_path = '/sys/fs/cgroup/memory/memory.limit_in_bytes'
+    cgroup_v2_path = '/sys/fs/cgroup/memory.max' # Path for cgroup v2
+
+    mem_limit = -1
+    try:
+        if os.path.exists(cgroup_v1_path):
+            with open(cgroup_v1_path) as f:
+                limit_str = f.read().strip()
+                # If the limit is ridiculously high, it means no limit.
+                if int(limit_str) < 10**18: 
+                    mem_limit = int(limit_str)
+        elif os.path.exists(cgroup_v2_path):
+            with open(cgroup_v2_path) as f:
+                limit_str = f.read().strip()
+                if limit_str != 'max':
+                     mem_limit = int(limit_str)
+
+        if mem_limit > 0:
+            # Set the soft and hard limits for the address space
+            resource.setrlimit(resource.RLIMIT_AS, (mem_limit, mem_limit))
+            print(f"Container memory limit set to: {mem_limit / 1024 / 1024:.2f} MB")
+        else:
+            print("No container memory limit found or it's unlimited.")
+
+    except (IOError, ValueError) as e:
+        print(f"Could not set memory limit: {e}")
+
+# Call this at the start of the application
+set_memory_limit()
+# --- End Memory Limit Configuration ---
+
 # --- Project Configuration ---
 DATA_DIR = "data/ukiyo-e"
-IMG_SIZE = 32 # Drastically reduced image size to lower memory
+IMG_SIZE = 64 # Drastically reduced image size to lower memory
 BATCH_SIZE = 4 # Reduced batch size to lower memory usage
 LR = 1e-4
 EPOCHS = 500 # Increased epochs for longer runs
@@ -41,14 +84,14 @@ NCA_STEPS_MIN, NCA_STEPS_MAX = 48, 64
 SAMPLES_DIR = "samples/integrated"
 
 # --- UI and Server Configuration ---
-# We embed the HTML in the script for portability
+# We use render_template_string to keep everything in one file for deployment simplicity.
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Integrated Model Training</title>
+    <title>NCA-StyleGAN Training</title>
     <style>
         body { background-color: #121212; color: #e0e0e0; font-family: 'Segoe UI', sans-serif; margin: 0; padding: 20px; text-align: center; }
         h1 { color: #ffffff; font-weight: 300; }
@@ -61,66 +104,73 @@ HTML_TEMPLATE = """
     </style>
 </head>
 <body>
-    <h1>Ukiyo-e Project: Integrated Training Visualizer</h1>
-    <p id="status">Connecting...</p>
-    <div id="container">
-        <div class="generation-box">
+    <h1>NCA-StyleGAN Competitive Training</h1>
+    <div id="status">Server is up. Waiting to start training...</div>
+    <div class="container">
+        <div class="image-box">
             <h2>StyleGAN Output</h2>
-            <img id="stylegan-img" src="" alt="Waiting for StyleGAN generation...">
-            <p id="stylegan-filename">No image generated yet.</p>
+            <img id="stylegan-image" src="" alt="StyleGAN Output">
         </div>
-        <div class="generation-box">
+        <div class="image-box">
             <h2>NCA Output</h2>
-            <img id="nca-img" src="" alt="Waiting for NCA generation...">
-            <p id="nca-filename">No image generated yet.</p>
+            <img id="nca-image" src="" alt="NCA Output">
         </div>
     </div>
+
     <script>
-        function updateImages() {
-            fetch('/latest_images')
+        document.addEventListener('DOMContentLoaded', function() {
+            // Start the training process once the page is loaded
+            fetch('/start-training', { method: 'POST' })
                 .then(response => response.json())
                 .then(data => {
-                    document.getElementById('status').textContent = data.status || 'Waiting for status...';
-                    if (data.stylegan_image) {
-                        const styleganImg = document.getElementById('stylegan-img');
-                        const styleganFile = document.getElementById('stylegan-filename');
-                        const newSrc = `/samples/${data.stylegan_image}?t=${new Date().getTime()}`;
-                        if (styleganImg.src !== newSrc) {
-                            styleganImg.src = newSrc;
-                            styleganFile.textContent = data.stylegan_image;
-                        }
-                    }
-                    if (data.nca_image) {
-                        const ncaImg = document.getElementById('nca-img');
-                        const ncaFile = document.getElementById('nca-filename');
-                        const newSrc = `/samples/${data.nca_image}?t=${new Date().getTime()}`;
-                        if (ncaImg.src !== newSrc) {
-                            ncaImg.src = newSrc;
-                            ncaFile.textContent = data.nca_image;
-                        }
-                    }
+                    console.log('Training start response:', data.message);
+                    // Now that training is started, begin polling for status and images
+                    pollStatus();
                 })
                 .catch(error => {
-                    console.error('Error fetching images:', error);
-                    document.getElementById('status').textContent = 'Error connecting to server. Is the training running?';
+                    console.error('Error starting training:', error);
+                    document.getElementById('status').textContent = 'Error: Could not start training process.';
                 });
+        });
+
+        function pollStatus() {
+            setInterval(() => {
+                // Fetch status
+                fetch('/status')
+                    .then(response => response.json())
+                    .then(data => {
+                        document.getElementById('status').textContent = data.status;
+                    });
+
+                // Fetch images
+                fetch('/latest-images')
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.stylegan_image) {
+                            document.getElementById('stylegan-image').src = 'data:image/png;base64,' + data.stylegan_image;
+                        }
+                        if (data.nca_image) {
+                            document.getElementById('nca-image').src = 'data:image/png;base64,' + data.nca_image;
+                        }
+                    });
+            }, 3000); // Poll every 3 seconds
         }
-        updateImages();
-        setInterval(updateImages, 5000);
     </script>
 </body>
 </html>
 """
 
-# --- Global state for communication between threads ---
-training_status = "Initializing..."
-latest_images_lock = threading.Lock()
-latest_image_paths = {'stylegan_image': None, 'nca_image': None}
-
+# --- Global State ---
+training_status = "Idle"
+latest_stylegan_img_b64 = None
+latest_nca_img_b64 = None
+TRAINING_STARTED = False
+TRAINING_LOCK = threading.Lock()
+# --- End Global State ---
 
 # --- Training Function (to be run in a background thread) ---
 def run_training():
-    global training_status, latest_image_paths
+    global training_status, latest_stylegan_img_b64, latest_nca_img_b64
     
     try:
         training_status = "Initializing models..."
@@ -210,9 +260,8 @@ def run_training():
                         torchvision.utils.save_image(sample_stylegan, os.path.join(SAMPLES_DIR, stylegan_fname), normalize=True)
                         torchvision.utils.save_image(sample_nca, os.path.join(SAMPLES_DIR, nca_fname), normalize=True)
                         
-                        with latest_images_lock:
-                            latest_image_paths['stylegan_image'] = stylegan_fname
-                            latest_image_paths['nca_image'] = nca_fname
+                        latest_stylegan_img_b64 = base64.b64encode(open(os.path.join(SAMPLES_DIR, stylegan_fname), 'rb').read()).decode('utf-8')
+                        latest_nca_img_b64 = base64.b64encode(open(os.path.join(SAMPLES_DIR, nca_fname), 'rb').read()).decode('utf-8')
 
         training_status = "Training Finished."
 
@@ -227,21 +276,28 @@ app = Flask(__name__)
 def index():
     return render_template_string(HTML_TEMPLATE)
 
-@app.route('/latest_images')
+@app.route('/start-training', methods=['POST'])
+def start_training():
+    global TRAINING_STARTED
+    with TRAINING_LOCK:
+        if not TRAINING_STARTED:
+            TRAINING_STARTED = True
+            training_thread = threading.Thread(target=run_training, daemon=True)
+            training_thread.start()
+            return jsonify({"message": "Training started successfully."}), 200
+        else:
+            return jsonify({"message": "Training has already been started."}), 200
+
+@app.route('/status')
+def get_status():
+    return jsonify({"status": training_status})
+
+@app.route('/latest-images')
 def get_latest_images():
-    with latest_images_lock:
-        response = latest_image_paths.copy()
-    response['status'] = training_status
-    return jsonify(response)
+    return jsonify({"stylegan_image": latest_stylegan_img_b64, "nca_image": latest_nca_img_b64})
 
 @app.route('/samples/<path:filename>')
 def serve_sample(filename):
     return send_from_directory(SAMPLES_DIR, filename)
 
-# --- Start Background Training ---
-# This code runs once when the module is loaded. Gunicorn's --preload
-# flag ensures this happens in a single master process before workers are forked.
-print("Starting training thread...")
-train_thread = threading.Thread(target=run_training, daemon=True)
-train_thread.start()
 print("Flask server is ready to be served by Gunicorn.") 

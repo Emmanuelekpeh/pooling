@@ -16,21 +16,12 @@ from src.models.stylegan import Discriminator # We can reuse the original discri
 
 # --- Device Configuration ---
 def get_device():
-    """Checks for CUDA, DirectML, and falls back to CPU."""
+    """Checks for CUDA and falls back to CPU."""
     # Standard CUDA check
     if torch.cuda.is_available():
         print("Using CUDA GPU.")
         return torch.device("cuda")
     
-    # AMD / DirectML check
-    try:
-        import torch_directml
-        if torch_directml.is_available():
-            print("Using DirectML GPU.")
-            return torch_directml.device()
-    except (ImportError, AttributeError):
-        pass
-
     print("No GPU found, using CPU.")
     return torch.device("cpu")
 
@@ -142,8 +133,9 @@ def run_training():
         opt_disc = optim.Adam(disc.parameters(), lr=LR, betas=(0.0, 0.99))
         
         training_status = "Loading dataset..."
+        # Note: num_workers > 0 can cause issues in some container environments. Setting to 0.
         dataset = ImageDataset(DATA_DIR, img_size=IMG_SIZE)
-        dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=2, pin_memory=True)
+        dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=0, pin_memory=True)
 
         fixed_noise = torch.randn(min(BATCH_SIZE, 8), Z_DIM).to(DEVICE)
         os.makedirs(SAMPLES_DIR, exist_ok=True)

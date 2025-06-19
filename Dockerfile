@@ -1,8 +1,11 @@
-# Use an official Python runtime as a parent image
-FROM python:3.11-slim
+# Use a more full-featured Python image to ensure system dependencies are present
+FROM python:3.11
 
 # Set the working directory in the container
 WORKDIR /app
+
+# Install system dependencies that might be required by torch/torchvision for image operations
+RUN apt-get update && apt-get install -y libgl1-mesa-glx
 
 # Copy the requirements file into the container at /app
 COPY requirements.txt .

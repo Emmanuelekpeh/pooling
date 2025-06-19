@@ -5,4 +5,5 @@ matplotlib
 scikit-image
 Flask
 Pillow
-gunicorn 
+gunicorn
+tqdm 

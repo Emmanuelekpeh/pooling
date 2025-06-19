@@ -1,0 +1,19 @@
+# flyctl launch added from .gitignore
+# Python
+**\__pycache__
+**\*.pyc
+**\*.pyo
+**\*.pyd
+
+# Generated images
+**\samples
+
+# Environment
+**\.env
+**\venv
+**\env
+
+# OS-specific
+**\.DS_Store
+**\Thumbs.db 
+fly.toml

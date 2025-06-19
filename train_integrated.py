@@ -163,7 +163,7 @@ def training_loop():
     """The main training loop."""
     try:
         update_status("Initializing models and data...")
-        gen_nca = IntegratedGenerator(Z_DIM, W_DIM, IMG_SIZE, NCA_CHANNELS).to(DEVICE)
+        gen_nca = IntegratedGenerator(Z_DIM, W_DIM).to(DEVICE)
         disc = Discriminator(IMG_SIZE).to(DEVICE)
 
         gen_nca_params = list(gen_nca.mapping_network.parameters()) + list(gen_nca.nca.parameters())

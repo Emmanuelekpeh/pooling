@@ -30,7 +30,7 @@ DEVICE = get_device()
 
 # --- Project Configuration ---
 DATA_DIR = "data/ukiyo-e"
-IMG_SIZE = 64
+IMG_SIZE = 32 # Drastically reduced image size to lower memory
 BATCH_SIZE = 4 # Reduced batch size to lower memory usage
 LR = 1e-4
 EPOCHS = 500 # Increased epochs for longer runs

@@ -31,7 +31,7 @@ DEVICE = get_device()
 # --- Project Configuration ---
 DATA_DIR = "data/ukiyo-e"
 IMG_SIZE = 64
-BATCH_SIZE = 16 # Back to a larger batch size for GPU
+BATCH_SIZE = 4 # Reduced batch size to lower memory usage
 LR = 1e-4
 EPOCHS = 500 # Increased epochs for longer runs
 Z_DIM = 128
@@ -134,8 +134,9 @@ def run_training():
         
         training_status = "Loading dataset..."
         # Note: num_workers > 0 can cause issues in some container environments. Setting to 0.
+        # pin_memory is also set to False as we are on CPU.
         dataset = ImageDataset(DATA_DIR, img_size=IMG_SIZE)
-        dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=0, pin_memory=True)
+        dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=0, pin_memory=False)
 
         fixed_noise = torch.randn(min(BATCH_SIZE, 8), Z_DIM).to(DEVICE)
         os.makedirs(SAMPLES_DIR, exist_ok=True)

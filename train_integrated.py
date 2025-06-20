@@ -1,124 +1,201 @@
-import torch
-import torch.optim as optim
-from torch.utils.data import DataLoader
-import torchvision
-from tqdm import tqdm
 import os
-import torch.nn.functional as F
-from flask import Flask, render_template_string, jsonify, send_from_directory
-import threading
-import glob
-import time
 import io
+import json
+import time
 import base64
 import random
-import resource # Import the resource module
-import argparse # For command-line argument parsing
-import json     # For status communication
+import argparse
+from threading import Thread
+
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import torch.nn.functional as F
+import torchvision
+from torchvision import transforms
+from torch.utils.data import Dataset, DataLoader
 from PIL import Image
+from tqdm import tqdm
+from flask import Flask, jsonify, render_template_string
 
-from src.data_loader.loader import ImageDataset
-from src.models.integrated import IntegratedGenerator, IntegratedNCA
-from src.models.stylegan import Discriminator # We can reuse the original discriminator
-
-# --- Device Configuration ---
-def get_device():
-    """Checks for CUDA and falls back to CPU."""
-    # Standard CUDA check
-    if torch.cuda.is_available():
-        print("Using CUDA GPU.")
-        return torch.device("cuda")
-    
-    print("No GPU found, using CPU.")
-    return torch.device("cpu")
-
-DEVICE = get_device()
-# --- End Device Configuration ---
-
-# --- Memory Limit Configuration ---
-def set_memory_limit():
-    """
-    Reads the container's memory limit and sets it for the Python process.
-    This helps in getting a MemoryError instead of a sudden OOM kill.
-    """
-    # This path is specific to cgroup v1, which is common in many container envs.
-    # Fly.io uses cgroup v2, where the path is different. We'll check for both.
-    cgroup_v1_path = '/sys/fs/cgroup/memory/memory.limit_in_bytes'
-    cgroup_v2_path = '/sys/fs/cgroup/memory.max' # Path for cgroup v2
-
-    mem_limit = -1
-    try:
-        if os.path.exists(cgroup_v1_path):
-            with open(cgroup_v1_path) as f:
-                limit_str = f.read().strip()
-                # If the limit is ridiculously high, it means no limit.
-                if int(limit_str) < 10**18: 
-                    mem_limit = int(limit_str)
-        elif os.path.exists(cgroup_v2_path):
-            with open(cgroup_v2_path) as f:
-                limit_str = f.read().strip()
-                if limit_str != 'max':
-                     mem_limit = int(limit_str)
-
-        if mem_limit > 0:
-            # Set the soft and hard limits for the address space
-            resource.setrlimit(resource.RLIMIT_AS, (mem_limit, mem_limit))
-            print(f"Container memory limit set to: {mem_limit / 1024 / 1024:.2f} MB")
-        else:
-            print("No container memory limit found or it's unlimited.")
-
-    except (IOError, ValueError) as e:
-        print(f"Could not set memory limit: {e}")
-
-# Call this at the start of the application
-set_memory_limit()
-# --- End Memory Limit Configuration ---
-
-# --- Project Configuration ---
-DATA_DIR = "data/ukiyo-e"
-IMG_SIZE = 64 # Drastically reduced image size to lower memory
-BATCH_SIZE = 4 # Reduced batch size to lower memory usage
+# --- Configuration ---
+Z_DIM = 128
+W_DIM = 128
+IMG_SIZE = 32
+NCA_CHANNELS = 16
+BATCH_SIZE = 4 # Reduced batch size further
 LR = 1e-4
-EPOCHS = 500 # Increased epochs for longer runs
-Z_DIM = 64 # Reduced model complexity
-W_DIM = 64 # Reduced model complexity
-NCA_CHANNELS = 12 # Reduced model complexity
-NCA_STEPS_MIN, NCA_STEPS_MAX = 48, 64
-SAMPLES_DIR = "samples/integrated"
+EPOCHS = 100
+NCA_STEPS_MIN = 64
+NCA_STEPS_MAX = 96
+DEVICE = "cpu" # Force CPU
+DATA_DIR = "./data/ukiyo-e"
+SAMPLES_DIR = "./samples"
 
-# --- UI and Server Configuration ---
-# We use render_template_string to keep everything in one file for deployment simplicity.
+# --- Models ---
+# (Using the same simplified model definitions as before)
+class MappingNetwork(nn.Module):
+    def __init__(self, z_dim, w_dim):
+        super().__init__()
+        self.mapping = nn.Sequential(
+            nn.Linear(z_dim, 512),
+            nn.ReLU(),
+            nn.Linear(512, 512),
+            nn.ReLU(),
+            nn.Linear(512, w_dim)
+        )
+    def forward(self, x):
+        return self.mapping(x)
+
+class GeneratorBlock(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1)
+        self.bn = nn.BatchNorm2d(out_channels)
+        self.relu = nn.ReLU()
+    def forward(self, x):
+        return self.relu(self.bn(self.conv(x)))
+
+class IntegratedGenerator(nn.Module):
+    def __init__(self, z_dim, w_dim):
+        super().__init__()
+        self.mapping_network = MappingNetwork(z_dim, w_dim)
+        self.const = nn.Parameter(torch.randn(1, 256, 4, 4)) # Reduced
+        self.up_block1 = nn.Upsample(scale_factor=2)
+        self.gen_block1 = GeneratorBlock(256, 128) # Reduced
+        self.up_block2 = nn.Upsample(scale_factor=2)
+        self.gen_block2 = GeneratorBlock(128, 64) # Reduced
+        self.up_block3 = nn.Upsample(scale_factor=2)
+        self.gen_block3 = GeneratorBlock(64, 32) # Reduced
+        self.up_block4 = nn.Upsample(scale_factor=2)
+        self.gen_block4 = GeneratorBlock(32, 16) # Reduced
+        self.to_rgb = nn.Conv2d(16, 3, kernel_size=1) # Reduced
+
+    def forward(self, noise, return_w=False):
+        w = self.mapping_network(noise)
+        x = self.const.repeat(noise.shape[0], 1, 1, 1)
+        x = self.up_block1(x)
+        x = self.gen_block1(x)
+        x = self.up_block2(x)
+        x = self.gen_block2(x)
+        x = self.up_block3(x)
+        x = self.gen_block3(x)
+        x = self.up_block4(x)
+        x = self.gen_block4(x)
+        img = torch.tanh(self.to_rgb(x))
+        if return_w:
+            return img, w
+        return img
+
+class IntegratedNCA(nn.Module):
+    def __init__(self, channel_n, w_dim, hidden_n=128):
+        super().__init__()
+        self.channel_n = channel_n
+        self.w_dim = w_dim
+        self.update_net = nn.Sequential(
+            nn.Linear(channel_n * 3 + w_dim, hidden_n),
+            nn.ReLU(),
+            nn.Linear(hidden_n, channel_n),
+        )
+        self.sobel_x = torch.tensor([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype=torch.float32).view(1, 1, 3, 3).to(DEVICE)
+        self.sobel_y = torch.tensor([[-1, -2, -1], [0, 0, 0], [1, 2, 1]], dtype=torch.float32).view(1, 1, 3, 3).to(DEVICE)
+
+    def get_seed(self, batch_size, size, device):
+        return torch.zeros(batch_size, self.channel_n, size, size, device=device)
+
+    def to_rgba(self, x):
+        return x[:, :4, :, :]
+
+    def perceive(self, x):
+        grad_x = F.conv2d(x, self.sobel_x.repeat(self.channel_n, 1, 1, 1), padding=1, groups=self.channel_n)
+        grad_y = F.conv2d(x, self.sobel_y.repeat(self.channel_n, 1, 1, 1), padding=1, groups=self.channel_n)
+        return torch.cat((x, grad_x, grad_y), 1)
+
+    def forward(self, x, w, steps):
+        for _ in range(steps):
+            pre_life_mask = (F.max_pool2d(x[:, 3:4, :, :], kernel_size=3, stride=1, padding=1) > 0.1).float()
+            perceived = self.perceive(x)
+            perceived = perceived.permute(0, 2, 3, 1).reshape(-1, self.channel_n * 3)
+            
+            w_expanded = w.unsqueeze(1).unsqueeze(1).repeat(1, x.shape[2], x.shape[3], 1)
+            w_reshaped = w_expanded.reshape(-1, self.w_dim)
+            
+            update_input = torch.cat([perceived, w_reshaped], dim=1)
+            ds = self.update_net(update_input)
+            
+            ds = ds.reshape(x.shape[0], x.shape[2], x.shape[3], self.channel_n).permute(0, 3, 1, 2)
+            
+            x = x + ds
+            life_mask = (x[:, 3:4, :, :] > 0.1).float() * pre_life_mask
+            x = x * life_mask
+        return x
+
+class Discriminator(nn.Module):
+    def __init__(self, img_size):
+        super().__init__()
+        self.model = nn.Sequential(
+            nn.Conv2d(3, 16, 4, 2, 1), # Reduced
+            nn.LeakyReLU(0.2),
+            nn.Conv2d(16, 32, 4, 2, 1), # Reduced
+            nn.BatchNorm2d(32),
+            nn.LeakyReLU(0.2),
+            nn.Conv2d(32, 64, 4, 2, 1), # Reduced
+            nn.BatchNorm2d(64),
+            nn.LeakyReLU(0.2),
+            nn.Conv2d(64, 128, 4, 2, 1), # Reduced
+            nn.BatchNorm2d(128),
+            nn.LeakyReLU(0.2),
+            nn.Conv2d(128, 1, 4, 1, 0),
+        )
+    def forward(self, img):
+        return self.model(img).view(-1)
+
+# --- Dataset ---
+class ImageDataset(Dataset):
+    def __init__(self, root_dir, img_size=64):
+        self.root_dir = root_dir
+        self.img_size = img_size
+        self.image_files = [f for f in os.listdir(root_dir) if f.endswith(('.jpg', '.png', '.jpeg'))]
+        self.transform = transforms.Compose([
+            transforms.Resize((img_size, img_size)),
+            transforms.ToTensor(),
+            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+        ])
+    def __len__(self):
+        return len(self.image_files)
+    def __getitem__(self, idx):
+        img_path = os.path.join(self.root_dir, self.image_files[idx])
+        image = Image.open(img_path).convert('RGB')
+        return self.transform(image)
+
 HTML_TEMPLATE = """
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NCA-StyleGAN Training</title>
+    <title>NCA vs StyleGAN Training</title>
     <style>
-        body { background-color: #121212; color: #e0e0e0; font-family: 'Segoe UI', sans-serif; margin: 0; padding: 20px; text-align: center; }
-        h1, h2 { color: #ffffff; }
-        .container { display: flex; justify-content: center; gap: 20px; margin-top: 20px; flex-wrap: wrap; }
-        .image-box { background-color: #1e1e1e; border: 1px solid #333; border-radius: 8px; padding: 15px; width: 300px; }
-        img { max-width: 100%; height: auto; border-radius: 4px; margin-top: 10px; background-color: #2a2a2a; }
-        #status { margin-top: 20px; font-size: 1.1em; background-color: #1e1e1e; padding: 10px; border-radius: 5px; display: inline-block; }
-        #error { color: #ff6b6b; font-weight: bold; }
+        body { font-family: sans-serif; background-color: #282c34; color: #abb2bf; text-align: center; }
+        .container { display: flex; justify-content: center; align-items: flex-start; gap: 20px; margin-top: 20px; }
+        .column { display: flex; flex-direction: column; align-items: center; }
+        h1, h2 { color: #61afef; }
+        img { border: 2px solid #61afef; max-width: 400px; height: auto; }
+        #status { margin-top: 20px; font-size: 1.2em; min-height: 50px; padding: 10px; border-radius: 5px; background-color: #3b4048; }
+        .error { color: #e06c75; border: 1px solid #e06c75; }
     </style>
 </head>
 <body>
-    <h1>NCA-StyleGAN Competitive Training</h1>
-    <div id="status">Connecting to server...</div>
+    <h1>NCA vs StyleGAN Training Status</h1>
+    <div id="status">Connecting...</div>
     <div class="container">
-        <div class="image-box">
+        <div class="column">
             <h2>Generator Output</h2>
-            <img id="generator-image" src="" alt="Generator Output">
+            <img id="generator-image" src="https://via.placeholder.com/400" alt="Generator Output">
         </div>
-        <div class="image-box">
+        <div class="column">
             <h2>NCA Output</h2>
-            <img id="nca-image" src="" alt="NCA Output">
+            <img id="nca-image" src="https://via.placeholder.com/400" alt="NCA Output">
         </div>
     </div>
-
     <script>
         function pollStatus() {
             setInterval(() => {
@@ -126,7 +203,7 @@ HTML_TEMPLATE = """
                     .then(response => response.json())
                     .then(data => {
                         const statusDiv = document.getElementById('status');
-                        statusDiv.textContent = data.status;
+                        statusDiv.textContent = data.status || 'No status message.';
                         if (data.error) {
                             statusDiv.classList.add('error');
                         } else {
@@ -296,25 +373,6 @@ def training_loop():
         print(error_msg)
         update_status(error_msg, error=True)
 
-# --- Web Server (to be run by the 'web' process) ---
-app = Flask(__name__)
-
-@app.route('/')
-def index():
-    return render_template_string(HTML_TEMPLATE)
-
-@app.route('/status')
-def get_status():
-    """Reads the status from the JSON file."""
-    if not os.path.exists(STATUS_FILE):
-        return jsonify({'status': 'Worker has not started yet.', 'images': [], 'error': False})
-    
-    try:
-        with open(STATUS_FILE, 'r') as f:
-            return jsonify(json.load(f))
-    except (IOError, json.JSONDecodeError):
-        return jsonify({'status': 'Error reading status file.', 'images': [], 'error': True})
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Run the NCA-StyleGAN application.")
     parser.add_argument('--run-training', action='store_true', help='Run the training loop.')
@@ -324,8 +382,4 @@ if __name__ == '__main__':
         print("Starting training worker...")
         training_loop()
     else:
-        # This case is for local testing of the web server, Gunicorn will run the 'app' object directly.
-        print("Starting Flask web server for local testing...")
-        # Initialize status file for web server
-        update_status("Web server started. Waiting for worker to start training.")
-        app.run(debug=True, port=5001) 
+        print("This script is now only for training. Use --run-training to start.") 

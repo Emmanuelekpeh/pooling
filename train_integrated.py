@@ -26,8 +26,8 @@ NCA_CHANNELS = 8  # Reduced for memory
 BATCH_SIZE = 2  # Reduced batch size for stability
 LR = 1e-4
 EPOCHS = 100
-NCA_STEPS_MIN = 32  # Reduced steps
-NCA_STEPS_MAX = 48  # Reduced steps
+NCA_STEPS_MIN = 64  # Increased from 32
+NCA_STEPS_MAX = 96  # Increased from 48
 DEVICE = "cpu" # Force CPU
 DATA_DIR = "./data/ukiyo-e"
 SAMPLES_DIR = "./samples"
@@ -112,15 +112,23 @@ class IntegratedNCA(nn.Module):
 
     def get_seed(self, batch_size, size, device):
         seed = torch.zeros(batch_size, self.channel_n, size, size, device=device)
-        # Set the center pixel to be "alive" with alpha = 1.0 and some initial RGB values
+        # Create a larger initial seed pattern (5x5 area) instead of just a single pixel
         center = size // 2
-        seed[:, 0, center, center] = 0.5  # R
-        seed[:, 1, center, center] = 0.3  # G  
-        seed[:, 2, center, center] = 0.7  # B
-        seed[:, 3, center, center] = 1.0  # Alpha (alive)
+        radius = 2  # Create a 5x5 area (center ± 2)
+        
+        for i in range(-radius, radius+1):
+            for j in range(-radius, radius+1):
+                # Set RGB values with some variation
+                seed[:, 0, center+i, center+j] = 0.5 + torch.rand(batch_size, device=device) * 0.2  # R
+                seed[:, 1, center+i, center+j] = 0.3 + torch.rand(batch_size, device=device) * 0.2  # G
+                seed[:, 2, center+i, center+j] = 0.7 + torch.rand(batch_size, device=device) * 0.2  # B
+                seed[:, 3, center+i, center+j] = 1.0  # Alpha (alive)
+        
         # Add some noise to hidden channels
         if self.channel_n > 4:
-            seed[:, 4:, center, center] = torch.randn(batch_size, self.channel_n - 4, device=device) * 0.1
+            for i in range(-radius, radius+1):
+                for j in range(-radius, radius+1):
+                    seed[:, 4:, center+i, center+j] = torch.randn(batch_size, self.channel_n - 4, device=device) * 0.1
         return seed
 
     def to_rgba(self, x):
@@ -155,16 +163,16 @@ class IntegratedNCA(nn.Module):
             # Reshape back to spatial format
             ds = ds.reshape(x.shape[0], x.shape[2], x.shape[3], self.channel_n).permute(0, 3, 1, 2)
             
-            # Stochastic update - only update some cells randomly
-            stochastic_mask = (torch.rand_like(alive_mask) < 0.5).float()
+            # More aggressive update - increase probability of updates
+            stochastic_mask = (torch.rand_like(alive_mask) < 0.8).float()  # Increased from 0.5 to 0.8
             update_mask = alive_mask * stochastic_mask
             
-            # Apply update
-            x = x + ds * update_mask * 0.1  # Scale down the update
+            # Apply update with stronger effect
+            x = x + ds * update_mask * 0.2  # Increased from 0.1 to 0.2
             
-            # Apply life mask - keep cells alive if they have neighbors or strong signal
-            neighbor_life = F.max_pool2d(alive_mask, kernel_size=3, stride=1, padding=1)
-            life_mask = (neighbor_life > 0.1).float()  # More permissive life condition
+            # More permissive life conditions - use max pooling with larger kernel
+            neighbor_life = F.max_pool2d(alive_mask, kernel_size=5, stride=1, padding=2)  # Increased kernel from 3 to 5
+            life_mask = (neighbor_life > 0.05).float()  # More permissive threshold (0.1 to 0.05)
             
             # Keep cells alive and apply life mask
             x = x * life_mask
@@ -587,7 +595,7 @@ def training_loop():
 
                 # Combined losses with mutual evaluation
                 loss_gen_total = loss_gen_adv + 0.1 * loss_gen_mutual
-                loss_nca_total = loss_nca_adv + 0.1 * loss_nca_mutual + 5.0 * loss_nca_match
+                loss_nca_total = loss_nca_adv + 0.1 * loss_nca_mutual + 1.0 * loss_nca_match
                 
                 loss_total = loss_gen_total + loss_nca_total
                 loss_total.backward()

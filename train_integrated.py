@@ -26,8 +26,8 @@ NCA_CHANNELS = 8  # Reduced for memory
 BATCH_SIZE = 2  # Reduced batch size for stability
 LR = 1e-4
 EPOCHS = 100
-NCA_STEPS_MIN = 64  # Increased from 32
-NCA_STEPS_MAX = 96  # Increased from 48
+NCA_STEPS_MIN = 48  # Adjusted from 64 to reduce memory usage
+NCA_STEPS_MAX = 64  # Adjusted from 96 to reduce memory usage
 DEVICE = "cpu" # Force CPU
 DATA_DIR = "./data/ukiyo-e"
 SAMPLES_DIR = "./samples"
@@ -112,9 +112,9 @@ class IntegratedNCA(nn.Module):
 
     def get_seed(self, batch_size, size, device):
         seed = torch.zeros(batch_size, self.channel_n, size, size, device=device)
-        # Create a larger initial seed pattern (5x5 area) instead of just a single pixel
+        # Create a smaller initial seed pattern (3x3 area) instead of 5x5 to save memory
         center = size // 2
-        radius = 2  # Create a 5x5 area (center ± 2)
+        radius = 1  # Create a 3x3 area (center ± 1)
         
         for i in range(-radius, radius+1):
             for j in range(-radius, radius+1):
@@ -163,19 +163,24 @@ class IntegratedNCA(nn.Module):
             # Reshape back to spatial format
             ds = ds.reshape(x.shape[0], x.shape[2], x.shape[3], self.channel_n).permute(0, 3, 1, 2)
             
-            # More aggressive update - increase probability of updates
-            stochastic_mask = (torch.rand_like(alive_mask) < 0.8).float()  # Increased from 0.5 to 0.8
+            # Balanced update - not too aggressive but still promotes growth
+            stochastic_mask = (torch.rand_like(alive_mask) < 0.7).float()  # Adjusted from 0.8 to 0.7
             update_mask = alive_mask * stochastic_mask
             
-            # Apply update with stronger effect
-            x = x + ds * update_mask * 0.2  # Increased from 0.1 to 0.2
+            # Apply update with moderate effect
+            x = x + ds * update_mask * 0.15  # Adjusted from 0.2 to 0.15
             
-            # More permissive life conditions - use max pooling with larger kernel
-            neighbor_life = F.max_pool2d(alive_mask, kernel_size=5, stride=1, padding=2)  # Increased kernel from 3 to 5
-            life_mask = (neighbor_life > 0.05).float()  # More permissive threshold (0.1 to 0.05)
+            # Balanced life conditions - use max pooling with moderate kernel
+            neighbor_life = F.max_pool2d(alive_mask, kernel_size=3, stride=1, padding=1)  # Back to 3x3 kernel
+            life_mask = (neighbor_life > 0.05).float()  # Keep permissive threshold at 0.05
             
             # Keep cells alive and apply life mask
             x = x * life_mask
+            
+            # Free memory explicitly
+            del perceived, w_expanded, w_reshaped, update_input, ds, stochastic_mask, update_mask, neighbor_life, life_mask
+            if step % 10 == 0:  # Only force garbage collection occasionally to save CPU time
+                torch.cuda.empty_cache() if torch.cuda.is_available() else None
             
         return x
 

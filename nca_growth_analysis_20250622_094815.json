@@ -1,0 +1,103 @@
+{
+  "experiments": [
+    {
+      "name": "Initial Discovery",
+      "description": "Found NCA bifurcation: either dies (0 alive) or overgrows (4096 alive)",
+      "key_finding": "Binary outcomes - no stable middle ground",
+      "alive_ratio": "0.000 or 1.000",
+      "status": "\u274c Problem identified"
+    },
+    {
+      "name": "Multiple Configuration Testing",
+      "description": "Tested 6 different growth configurations simultaneously",
+      "key_finding": "All resulted in death or overgrowth - confirms systematic issue",
+      "alive_ratio": "0.000 or 1.000",
+      "status": "\u274c Systematic failure"
+    },
+    {
+      "name": "Fine-Tuned Parameter Testing",
+      "description": "8 ultra-precise parameter variations with stabilization",
+      "key_finding": "Even precise tuning couldn't escape bifurcation",
+      "alive_ratio": "0.000 or 1.000",
+      "status": "\u274c Parameter tuning insufficient"
+    },
+    {
+      "name": "Research-Based Homeostatic NCA",
+      "description": "Implemented attention, memory channels, hardware separation",
+      "key_finding": "Perfect stability (1.0) but no dynamics - learned 'do nothing'",
+      "alive_ratio": "Static values",
+      "status": "\ud83d\udd04 Stable but non-functional"
+    },
+    {
+      "name": "Stability-First Curriculum",
+      "description": "Progressive training from stability to growth",
+      "key_finding": "NCA stayed essentially dead (0.009 alive ratio)",
+      "alive_ratio": "~0.009",
+      "status": "\u274c Too conservative"
+    },
+    {
+      "name": "Growth-First Curriculum",
+      "description": "Strong growth incentives first, then add stability",
+      "key_finding": "Initial improvement (0.129 alive) but still died in later stages",
+      "alive_ratio": "0.129 \u2192 0.000",
+      "status": "\ud83d\udd04 Progress but unstable"
+    },
+    {
+      "name": "Super-Aggressive Growth (Current)",
+      "description": "Maximum growth incentives, minimal constraints",
+      "key_finding": "Under development - testing extreme measures",
+      "alive_ratio": "TBD",
+      "status": "\ud83d\ude80 In progress"
+    }
+  ],
+  "insights": [
+    {
+      "insight": "Saddle-Node Bifurcation",
+      "description": "Mathematical phenomenon where small parameter changes cause dramatic state shifts",
+      "implication": "Traditional parameter tuning cannot solve this - need architectural changes"
+    },
+    {
+      "insight": "Stability-Growth Tradeoff",
+      "description": "Approaches that prioritize stability learn 'do nothing' behavior",
+      "implication": "Must teach growth first, then add stability constraints"
+    },
+    {
+      "insight": "Hardware-State Separation",
+      "description": "Latest research suggests separating immutable hardware from mutable state",
+      "implication": "Need specialized cell types with different update rules"
+    },
+    {
+      "insight": "Multi-Timescale Dynamics",
+      "description": "Fast local updates + slow global regulation prevent synchronization",
+      "implication": "Single-timescale updates may be fundamentally limited"
+    },
+    {
+      "insight": "Growth-First Shows Promise",
+      "description": "Growth-first curriculum achieved 0.129 vs 0.009 alive ratio",
+      "implication": "Direction is correct but need stronger incentives"
+    }
+  ],
+  "research": [
+    "Distill.pub Growing CA (2020) - Original NCA concepts",
+    "EngramNCA (2025) - Private memory channels",
+    "DiffLogic CA (2025) - Differentiable logic gates",
+    "IsoNCA - Isotropic growth patterns",
+    "Studying Growth (Greydanus) - Growth dynamics analysis",
+    "Bifurcation theory - Mathematical framework for state transitions"
+  ],
+  "status": {
+    "problem_understanding": "\u2705 Deep - Bifurcation theory, research foundation",
+    "attempted_solutions": "\u2705 Comprehensive - 7 different approaches tested",
+    "progress_made": "\ud83d\udd04 Moderate - Growth-first shows promise (0.129 vs 0.009)",
+    "current_experiment": "\ud83d\ude80 Super-aggressive growth - testing maximum incentives"
+  },
+  "next_steps": [
+    "\ud83e\uddea Complete super-aggressive growth experiment",
+    "\ud83d\udd2c Try multi-timescale architecture (fast/slow updates)",
+    "\ud83c\udfd7\ufe0f  Implement hardware-state separation",
+    "\ud83c\udfaf Test with different loss functions (adversarial, contrastive)",
+    "\ud83d\udcd0 Explore continuous CA formulations",
+    "\ud83d\udd04 Try evolutionary/genetic algorithm approaches"
+  ],
+  "timestamp": "2025-06-22T09:48:15.703716"
+}

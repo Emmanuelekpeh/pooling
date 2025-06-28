@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Chart.js Line Chart Debug</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { 
+            font-family: sans-serif; 
+            background-color: #282c34; 
+            color: #abb2bf; 
+            padding: 20px; 
+        }
+        .chart-container { 
+            width: 800px; 
+            height: 400px; 
+            margin: 20px auto; 
+            background: #3b4048; 
+            padding: 20px; 
+            border-radius: 10px; 
+        }
+        .chart-canvas { 
+            width: 100% !important; 
+            height: 300px !important; 
+        }
+        h2 { color: #61afef; text-align: center; }
+    </style>
+</head>
+<body>
+    <h1 style="text-align: center;">Chart.js Line Chart Debug Test</h1>
+    
+    <div class="chart-container">
+        <h2>🔥 Training Losses</h2>
+        <canvas id="testChart" class="chart-canvas"></canvas>
+    </div>
+    
+    <div id="debug-info" style="background: #3b4048; padding: 15px; border-radius: 5px; margin-top: 20px;">
+        <h3>Debug Information:</h3>
+        <p id="chart-status">Initializing chart...</p>
+        <p id="data-status">Loading data...</p>
+    </div>
+
+    <script>
+        // Chart.js configuration with dark theme
+        Chart.defaults.color = '#abb2bf';
+        Chart.defaults.borderColor = '#4b5263';
+        Chart.defaults.backgroundColor = 'rgba(97, 175, 239, 0.1)';
+        
+        // Sample data for testing
+        const sampleData = {
+            epochs: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+            discriminator_loss: [0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.35, 0.3, 0.25, 0.2],
+            generator_loss: [0.8, 0.75, 0.65, 0.55, 0.45, 0.35, 0.3, 0.25, 0.22, 0.18],
+            nca_loss: [0.85, 0.78, 0.68, 0.58, 0.48, 0.38, 0.32, 0.27, 0.23, 0.19],
+            transformer_loss: [0.7, 0.65, 0.6, 0.5, 0.4, 0.35, 0.3, 0.25, 0.2, 0.18]
+        };
+        
+        // Initialize chart
+        const ctx = document.getElementById('testChart').getContext('2d');
+        
+        const testChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: sampleData.epochs,
+                datasets: [
+                    {
+                        label: 'Discriminator Loss',
+                        data: sampleData.discriminator_loss,
+                        borderColor: '#e06c75',
+                        backgroundColor: 'rgba(224, 108, 117, 0.1)',
+                        tension: 0.3,
+                        pointRadius: 4,
+                        pointHoverRadius: 6,
+                        borderWidth: 2
+                    },
+                    {
+                        label: 'Generator Loss',
+                        data: sampleData.generator_loss,
+                        borderColor: '#61afef',
+                        backgroundColor: 'rgba(97, 175, 239, 0.1)',
+                        tension: 0.3,
+                        pointRadius: 4,
+                        pointHoverRadius: 6,
+                        borderWidth: 2
+                    },
+                    {
+                        label: 'NCA Loss',
+                        data: sampleData.nca_loss,
+                        borderColor: '#98c379',
+                        backgroundColor: 'rgba(152, 195, 121, 0.1)',
+                        tension: 0.3,
+                        pointRadius: 4,
+                        pointHoverRadius: 6,
+                        borderWidth: 2
+                    },
+                    {
+                        label: 'Transformer Loss',
+                        data: sampleData.transformer_loss,
+                        borderColor: '#e5c07b',
+                        backgroundColor: 'rgba(229, 192, 123, 0.1)',
+                        tension: 0.3,
+                        pointRadius: 4,
+                        pointHoverRadius: 6,
+                        borderWidth: 2
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        labels: { 
+                            color: '#abb2bf',
+                            font: { size: 12 }
+                        }
+                    },
+                    title: {
+                        display: true,
+                        text: 'Training Loss Over Time',
+                        color: '#61afef',
+                        font: { size: 16 }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { color: '#4b5263' },
+                        ticks: { color: '#abb2bf' },
+                        title: {
+                            display: true,
+                            text: 'Epoch',
+                            color: '#abb2bf'
+                        }
+                    },
+                    y: {
+                        grid: { color: '#4b5263' },
+                        ticks: { color: '#abb2bf' },
+                        title: {
+                            display: true,
+                            text: 'Loss Value',
+                            color: '#abb2bf'
+                        },
+                        beginAtZero: true
+                    }
+                },
+                interaction: {
+                    intersect: false,
+                    mode: 'index'
+                },
+                animation: {
+                    duration: 1000
+                }
+            }
+        });
+        
+        // Update debug info
+        document.getElementById('chart-status').textContent = 'Chart initialized successfully!';
+        document.getElementById('data-status').textContent = `Data loaded: ${sampleData.epochs.length} epochs with ${Object.keys(sampleData).length - 1} metrics`;
+        
+        // Test chart update after 2 seconds
+        setTimeout(() => {
+            // Add one more data point
+            sampleData.epochs.push(11);
+            sampleData.discriminator_loss.push(0.15);
+            sampleData.generator_loss.push(0.16);
+            sampleData.nca_loss.push(0.17);
+            sampleData.transformer_loss.push(0.16);
+            
+            testChart.data.labels = sampleData.epochs;
+            testChart.data.datasets[0].data = sampleData.discriminator_loss;
+            testChart.data.datasets[1].data = sampleData.generator_loss;
+            testChart.data.datasets[2].data = sampleData.nca_loss;
+            testChart.data.datasets[3].data = sampleData.transformer_loss;
+            testChart.update();
+            
+            document.getElementById('data-status').textContent = `Data updated: ${sampleData.epochs.length} epochs (added epoch 11)`;
+        }, 2000);
+        
+        console.log('Chart.js debug test loaded');
+        console.log('Sample data:', sampleData);
+    </script>
+</body>
+</html> 

@@ -21,6 +21,5 @@ COPY . .
 EXPOSE 5001
 
 # Define the command to run the application
-# --preload is crucial: it runs our module-level code (starting the training thread) once.
-# --timeout 120 gives workers more time before being recycled, which can be good for long-running tasks.
-CMD ["gunicorn", "--bind", "[::]:5001", "--workers", "1", "--threads", "2", "--timeout", "120", "--preload", "train_integrated:app"] 
+# The default command will be overridden by fly.toml process definitions
+CMD ["gunicorn", "--bind", "[::]:5001", "--workers", "1", "--threads", "2", "server:app"] 

@@ -91,52 +91,133 @@ class IntegratedNCA(nn.Module):
         super().__init__()
         self.channel_n = channel_n
         
-        # Perception network (as before)
+        # Perception network with LeakyReLU and BatchNorm
         sobel_x = torch.tensor([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype=torch.float32).view(1, 1, 3, 3).repeat(self.channel_n, 1, 1, 1)
         sobel_y = torch.tensor([[-1, -2, -1], [0, 0, 0], [1, 2, 1]], dtype=torch.float32).view(1, 1, 3, 3).repeat(self.channel_n, 1, 1, 1)
+        
         self.perceive = nn.Conv2d(self.channel_n, self.channel_n * 2, 3, padding=1, bias=False, groups=self.channel_n)
         self.perceive.weight = nn.Parameter(torch.cat([sobel_x, sobel_y], dim=0), requires_grad=False)
         
-        # Update network now includes the w_dim
+        # Enhanced perception processing
+        self.perception_net = nn.Sequential(
+            nn.Conv2d(self.channel_n * 3, hidden_n, 1),
+            nn.LeakyReLU(0.2),
+            nn.BatchNorm2d(hidden_n),
+            nn.Conv2d(hidden_n, hidden_n, 1),
+            nn.LeakyReLU(0.2),
+            nn.BatchNorm2d(hidden_n)
+        )
+        
+        # Update network with LeakyReLU and BatchNorm
         self.update_net = nn.Sequential(
             nn.Linear(self.channel_n * 3 + w_dim, hidden_n),
-            nn.ReLU(),
-            nn.Linear(hidden_n, self.channel_n, bias=False)
+            nn.LeakyReLU(0.2),
+            nn.BatchNorm1d(hidden_n),
+            nn.Linear(hidden_n, self.channel_n),
+            nn.Tanh()  # Keep Tanh for final output to maintain bounded values
         )
-        self.update_net[-1].weight.data.fill_(0.0)
+        
+        # Initialize last layer with small weights for stability
+        self.update_net[-2].weight.data.fill_(0.0)
+        
+        # Gradient scaling factors for controlled updates
+        self.perception_scale = nn.Parameter(torch.ones(1))
+        self.update_scale = nn.Parameter(torch.ones(1))
+        
+        # Adaptive stability parameters
+        self.stability_controller = nn.Sequential(
+            nn.Linear(self.channel_n + w_dim, hidden_n // 2),
+            nn.LeakyReLU(0.2),
+            nn.Linear(hidden_n // 2, 3),  # 3 parameters: update_rate, survival_threshold, growth_rate
+            nn.Sigmoid()  # Keep parameters in [0,1] range
+        )
+
+    def get_stability_params(self, x, w):
+        """Get adaptive stability parameters based on current state"""
+        # Global state vector
+        global_state = x.mean(dim=[2, 3])  # [batch, channels]
+        
+        # Input to stability controller
+        stability_input = torch.cat([global_state, w], dim=1)
+        
+        # Get parameters [batch, 3]
+        params = self.stability_controller(stability_input)
+        
+        # Scale parameters to appropriate ranges
+        update_rate = params[:, 0:1] * 0.2 + 0.1  # 0.1 to 0.3
+        survival_threshold = params[:, 1:2] * 0.1 + 0.1  # 0.1 to 0.2
+        growth_rate = params[:, 2:3] * 0.3 + 0.2  # 0.2 to 0.5
+        
+        return {
+            'update_rate': update_rate,
+            'survival_threshold': survival_threshold,
+            'growth_rate': growth_rate
+        }
 
     def get_living_mask(self, x):
-        return F.max_pool2d(x[:, 3:4, :, :], kernel_size=3, stride=1, padding=1) > 0.1
+        """Enhanced living mask with adaptive thresholding"""
+        alpha = x[:, 3:4, :, :]
+        neighbor_count = F.max_pool2d((alpha > 0.1).float(), kernel_size=3, stride=1, padding=1)
+        return (alpha > 0.1) & (neighbor_count >= 2)  # Need at least 2 living neighbors
 
     def forward(self, x, w, steps=64):
+        """Forward pass with enhanced stability mechanisms"""
         w_expanded = w.unsqueeze(-1).unsqueeze(-1).expand(-1, -1, x.shape[2], x.shape[3])
         
         for _ in range(steps):
+            # Get adaptive stability parameters
+            stability_params = self.get_stability_params(x, w)
+            
+            # Pre-update life mask
             pre_life_mask = self.get_living_mask(x)
             
+            # Perception with gradient scaling
             perception = self.perceive(x)
+            perception = perception * self.perception_scale
             
-            combined_input = torch.cat([x, perception, w_expanded], dim=1).permute(0, 2, 3, 1)
+            # Process perception features
+            perception_features = self.perception_net(torch.cat([x, perception], dim=1))
             
+            # Prepare update input
+            combined_input = torch.cat([x, perception_features, w_expanded], dim=1).permute(0, 2, 3, 1)
+            
+            # Generate update with scaled gradients
             delta = self.update_net(combined_input).permute(0, 3, 1, 2)
+            delta = delta * self.update_scale
             
-            # Stochastic update
-            update_mask = (torch.rand_like(x[:, 3:4, :, :]) < 0.5) & (x[:, 3:4, :, :] > 0.1)
-            x = x + delta * update_mask.float()
+            # Apply update with adaptive rate
+            update_rate = stability_params['update_rate'].view(-1, 1, 1, 1)
+            x = x + delta * update_rate
             
-            # Death mask
-            post_life_mask = self.get_living_mask(x)
-            life_mask = pre_life_mask & post_life_mask
-            x = x * life_mask.float()
+            # Apply life dynamics with adaptive parameters
+            survival_threshold = stability_params['survival_threshold'].view(-1, 1, 1, 1)
+            growth_rate = stability_params['growth_rate'].view(-1, 1, 1, 1)
             
+            # Enhanced life dynamics
+            neighbor_life = F.max_pool2d(x[:, 3:4, :, :], kernel_size=3, stride=1, padding=1)
+            life_mask = (neighbor_life > survival_threshold).float()
+            
+            # Apply growth factor
+            growth_factor = torch.sigmoid(neighbor_life * growth_rate)
+            x = x * growth_factor
+            
+            # Add minimal noise during training
+            if self.training:
+                x = x + torch.randn_like(x) * 0.001
+            
+            # Ensure bounded values
+            x = x.clamp(-1.0, 1.0)
+        
         return x
 
     def to_rgba(self, x):
-        return x[:, :4, :, :].clamp(-1.0, 1.0) # Clamp to valid range for tanh
+        """Convert output to RGBA format"""
+        return x[:, :4, :, :].clamp(-1.0, 1.0)
     
     def get_seed(self, batch_size=1, size=128, device='cpu'):
+        """Create a seed pattern"""
         seed = torch.zeros(batch_size, self.channel_n, size, size, device=device)
-        seed[:, 3:, size // 2, size // 2] = 1.0 
+        seed[:, 3:, size // 2-1:size // 2+1, size // 2-1:size // 2+1] = 1.0
         return seed
 
 if __name__ == '__main__':

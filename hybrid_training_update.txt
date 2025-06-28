@@ -1,0 +1,12 @@
+# Hybrid Dataset Training Configuration
+# Update train_integrated_fast.py with:
+
+DATA_DIR = "./data/ukiyo-e-hybrid"
+# Total images: 40
+# Traditional: 28 (70.0%)
+# Pixel art: 12 (30.0%)
+
+# Expected benefits:
+# - Stable NCA growth from pixel art component
+# - Rich traditional art learning from ukiyo-e component
+# - Best of both worlds approach

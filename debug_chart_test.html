@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Chart.js Line Chart Debug - Your Data</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { 
+            font-family: sans-serif; 
+            background-color: #282c34; 
+            color: #abb2bf; 
+            padding: 20px; 
+        }
+        .chart-container { 
+            width: 800px; 
+            height: 400px; 
+            margin: 20px auto; 
+            background: #3b4048; 
+            padding: 20px; 
+            border-radius: 10px; 
+        }
+        .chart-canvas { 
+            width: 100% !important; 
+            height: 300px !important; 
+        }
+        h2 { color: #61afef; text-align: center; }
+        .debug-info {
+            background: #2c3e50;
+            padding: 15px;
+            margin: 10px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <h1 style="text-align: center;">Chart.js Debug - Your Training Data</h1>
+    
+    <div class="debug-info" id="debug-output">
+        <h3>Debug Information:</h3>
+        <div id="data-info">Loading...</div>
+    </div>
+    
+    <div class="chart-container">
+        <h2>Training Losses</h2>
+        <canvas class="chart-canvas" id="lossesChart"></canvas>
+    </div>
+    
+    <div class="chart-container">
+        <h2>Quality Scores</h2>
+        <canvas class="chart-canvas" id="scoresChart"></canvas>
+    </div>
+
+    <script>
+        // Set Chart.js defaults for dark theme
+        Chart.defaults.color = '#abb2bf';
+        Chart.defaults.borderColor = '#4b5263';
+        
+        // Sample data that matches your server structure
+        const sampleData = {
+            epochs: [1, 2, 3, 4, 5],
+            discriminator_loss: [0.8, 0.7, 0.6, 0.5, 0.4],
+            generator_loss: [0.9, 0.8, 0.7, 0.6, 0.5],
+            nca_loss: [0.7, 0.6, 0.5, 0.4, 0.3],
+            transformer_loss: [0.6, 0.5, 0.4, 0.3, 0.2],
+            gen_quality: [0.3, 0.4, 0.5, 0.6, 0.7],
+            nca_quality: [0.2, 0.3, 0.4, 0.5, 0.6],
+            ensemble_quality: [0.25, 0.35, 0.45, 0.55, 0.65],
+            cross_learning_loss: [0.5, 0.4, 0.3, 0.2, 0.1]
+        };
+        
+        function debugLog(message) {
+            const debugDiv = document.getElementById('data-info');
+            debugDiv.innerHTML += message + '<br>';
+        }
+        
+        debugLog('Sample data loaded: ' + JSON.stringify(sampleData, null, 2));
+        
+        // Initialize losses chart
+        const lossesCtx = document.getElementById('lossesChart').getContext('2d');
+        const lossesChart = new Chart(lossesCtx, {
+            type: 'line',
+            data: {
+                labels: sampleData.epochs,
+                datasets: [
+                    {
+                        label: 'Discriminator Loss',
+                        data: sampleData.discriminator_loss,
+                        borderColor: '#e06c75',
+                        backgroundColor: 'rgba(224, 108, 117, 0.1)',
+                        tension: 0.3,
+                        pointRadius: 4,
+                        fill: false
+                    },
+                    {
+                        label: 'Generator Loss',
+                        data: sampleData.generator_loss,
+                        borderColor: '#61afef',
+                        backgroundColor: 'rgba(97, 175, 239, 0.1)',
+                        tension: 0.3,
+                        pointRadius: 4,
+                        fill: false
+                    },
+                    {
+                        label: 'NCA Loss',
+                        data: sampleData.nca_loss,
+                        borderColor: '#98c379',
+                        backgroundColor: 'rgba(152, 195, 121, 0.1)',
+                        tension: 0.3,
+                        pointRadius: 4,
+                        fill: false
+                    },
+                    {
+                        label: 'Transformer Loss',
+                        data: sampleData.transformer_loss,
+                        borderColor: '#e5c07b',
+                        backgroundColor: 'rgba(229, 192, 123, 0.1)',
+                        tension: 0.3,
+                        pointRadius: 4,
+                        fill: false
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        labels: { color: '#abb2bf' }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { color: '#4b5263' },
+                        ticks: { color: '#abb2bf' }
+                    },
+                    y: {
+                        grid: { color: '#4b5263' },
+                        ticks: { color: '#abb2bf' }
+                    }
+                }
+            }
+        });
+        
+        // Initialize scores chart
+        const scoresCtx = document.getElementById('scoresChart').getContext('2d');
+        const scoresChart = new Chart(scoresCtx, {
+            type: 'line',
+            data: {
+                labels: sampleData.epochs,
+                datasets: [
+                    {
+                        label: 'Generator Quality',
+                        data: sampleData.gen_quality,
+                        borderColor: '#61afef',
+                        backgroundColor: 'rgba(97, 175, 239, 0.1)',
+                        tension: 0.3,
+                        pointRadius: 4,
+                        fill: false
+                    },
+                    {
+                        label: 'NCA Quality',
+                        data: sampleData.nca_quality,
+                        borderColor: '#98c379',
+                        backgroundColor: 'rgba(152, 195, 121, 0.1)',
+                        tension: 0.3,
+                        pointRadius: 4,
+                        fill: false
+                    },
+                    {
+                        label: 'Ensemble Quality',
+                        data: sampleData.ensemble_quality,
+                        borderColor: '#c678dd',
+                        backgroundColor: 'rgba(198, 120, 221, 0.1)',
+                        tension: 0.3,
+                        pointRadius: 4,
+                        fill: false
+                    },
+                    {
+                        label: 'Cross-Learning Loss',
+                        data: sampleData.cross_learning_loss,
+                        borderColor: '#d19a66',
+                        backgroundColor: 'rgba(209, 154, 102, 0.1)',
+                        tension: 0.3,
+                        pointRadius: 4,
+                        fill: false
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        labels: { color: '#abb2bf' }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { color: '#4b5263' },
+                        ticks: { color: '#abb2bf' }
+                    },
+                    y: {
+                        grid: { color: '#4b5263' },
+                        ticks: { color: '#abb2bf' },
+                        beginAtZero: true
+                        // Removed max: 1.0 constraint
+                    }
+                }
+            }
+        });
+        
+        debugLog('Charts initialized successfully');
+        
+        // Test fetching real data from your server
+        setTimeout(() => {
+            debugLog('Attempting to fetch real data from server...');
+            fetch('/chart-data')
+                .then(response => response.json())
+                .then(realData => {
+                    debugLog('Real server data: ' + JSON.stringify(realData, null, 2));
+                    
+                    // Update charts with real data
+                    if (realData && realData.epochs && realData.epochs.length > 0) {
+                        debugLog('Updating charts with real data...');
+                        
+                        // Update losses chart
+                        lossesChart.data.labels = realData.epochs;
+                        lossesChart.data.datasets[0].data = realData.discriminator_loss || [];
+                        lossesChart.data.datasets[1].data = realData.generator_loss || [];
+                        lossesChart.data.datasets[2].data = realData.nca_loss || [];
+                        lossesChart.data.datasets[3].data = realData.transformer_loss || [];
+                        lossesChart.update();
+                        
+                        // Update scores chart
+                        scoresChart.data.labels = realData.epochs;
+                        scoresChart.data.datasets[0].data = realData.gen_quality || [];
+                        scoresChart.data.datasets[1].data = realData.nca_quality || [];
+                        scoresChart.data.datasets[2].data = realData.ensemble_quality || [];
+                        scoresChart.data.datasets[3].data = realData.cross_learning_loss || [];
+                        scoresChart.update();
+                        
+                        debugLog('Charts updated with real data successfully');
+                    } else {
+                        debugLog('No valid real data received - using sample data');
+                    }
+                })
+                .catch(error => {
+                    debugLog('Error fetching real data: ' + error.message);
+                    debugLog('Continuing with sample data...');
+                });
+        }, 2000);
+        
+    </script>
+</body>
+</html> 

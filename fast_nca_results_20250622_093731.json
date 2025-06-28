@@ -1,0 +1,9 @@
+{
+  "stages": [
+    {
+      "stage": "Stability",
+      "target": 0.05,
+      "final_alive": 0.0087890625,
+      "final_loss": 0.09154335409402847,
+      "time": 11.594929695129395,
+      "converged": 
